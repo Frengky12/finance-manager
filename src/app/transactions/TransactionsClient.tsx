@@ -1,7 +1,7 @@
 "use client";
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Filter } from "lucide-react";
+import { Plus, Trash2, Filter, Search, Download } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Card, CardContent } from "@/components/ui/card";
@@ -11,6 +11,8 @@ import { format } from "date-fns";
 
 interface Props { initialTransactions: Transaction[] }
 
+const ALL_CATEGORIES = [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES];
+
 const EMPTY_FORM = {
   type: "expense" as TransactionType,
   category: "food" as TransactionCategory,
@@ -19,6 +21,21 @@ const EMPTY_FORM = {
   date: format(new Date(), "yyyy-MM-dd"),
 };
 
+function exportCSV(transactions: Transaction[]) {
+  const header = "Tanggal,Tipe,Kategori,Deskripsi,Jumlah";
+  const rows = transactions.map((t) =>
+    [t.date, t.type, CATEGORY_LABELS[t.category], `"${t.description || ""}"`, t.amount].join(",")
+  );
+  const csv = [header, ...rows].join("\n");
+  const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = `transaksi-${format(new Date(), "yyyy-MM")}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
 export function TransactionsClient({ initialTransactions }: Props) {
   const router = useRouter();
   const [transactions, setTransactions] = useState(initialTransactions);
@@ -26,18 +43,25 @@ export function TransactionsClient({ initialTransactions }: Props) {
   const [form, setForm] = useState(EMPTY_FORM);
   const [filterType, setFilterType] = useState<"all" | TransactionType>("all");
   const [filterMonth, setFilterMonth] = useState(format(new Date(), "yyyy-MM"));
+  const [filterCategory, setFilterCategory] = useState<"all" | TransactionCategory>("all");
+  const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
 
   const categories = form.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
 
-  const filtered = useMemo(
-    () =>
-      [...transactions]
-        .filter((t) => filterType === "all" || t.type === filterType)
-        .filter((t) => !filterMonth || t.date.startsWith(filterMonth))
-        .sort((a, b) => b.date.localeCompare(a.date)),
-    [transactions, filterType, filterMonth]
-  );
+  const filtered = useMemo(() => {
+    const q = search.toLowerCase();
+    return [...transactions]
+      .filter((t) => filterType === "all" || t.type === filterType)
+      .filter((t) => !filterMonth || t.date.startsWith(filterMonth))
+      .filter((t) => filterCategory === "all" || t.category === filterCategory)
+      .filter((t) =>
+        !q ||
+        t.description?.toLowerCase().includes(q) ||
+        CATEGORY_LABELS[t.category]?.toLowerCase().includes(q)
+      )
+      .sort((a, b) => b.date.localeCompare(a.date));
+  }, [transactions, filterType, filterMonth, filterCategory, search]);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -56,7 +80,7 @@ export function TransactionsClient({ initialTransactions }: Props) {
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this transaction?")) return;
+    if (!confirm("Hapus transaksi ini?")) return;
     await fetch(`/api/transactions/${id}`, { method: "DELETE" });
     setTransactions((prev) => prev.filter((t) => t.id !== id));
     router.refresh();
@@ -69,48 +93,87 @@ export function TransactionsClient({ initialTransactions }: Props) {
     <div className="space-y-5">
       <div className="flex items-center justify-between">
         <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Transactions</h1>
-        <Button onClick={() => setModalOpen(true)} size="sm">
-          <Plus size={15} className="mr-1" /> Add
-        </Button>
+        <div className="flex gap-2">
+          {filtered.length > 0 && (
+            <Button variant="secondary" size="sm" onClick={() => exportCSV(filtered)}>
+              <Download size={14} className="mr-1" /> CSV
+            </Button>
+          )}
+          <Button onClick={() => setModalOpen(true)} size="sm">
+            <Plus size={15} className="mr-1" /> Add
+          </Button>
+        </div>
       </div>
 
       {/* Filters */}
-      <div className="flex flex-wrap gap-2 items-center">
-        <Filter size={15} className="text-gray-400 shrink-0" />
-        <input
-          type="month"
-          value={filterMonth}
-          onChange={(e) => setFilterMonth(e.target.value)}
-          className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
-        />
-        <div className="flex gap-1">
-          {(["all", "income", "expense"] as const).map((v) => (
-            <button
-              key={v}
-              onClick={() => setFilterType(v)}
-              className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
-                filterType === v ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
-              }`}
-            >
-              {v.charAt(0).toUpperCase() + v.slice(1)}
-            </button>
-          ))}
+      <div className="space-y-2">
+        {/* Search */}
+        <div className="relative">
+          <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <input
+            type="text"
+            placeholder="Cari deskripsi atau kategori…"
+            value={search}
+            onChange={(e) => setSearch(e.target.value)}
+            className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+        </div>
+
+        {/* Filter row */}
+        <div className="flex flex-wrap gap-2 items-center">
+          <Filter size={15} className="text-gray-400 shrink-0" />
+
+          {/* Month */}
+          <input
+            type="month"
+            value={filterMonth}
+            onChange={(e) => setFilterMonth(e.target.value)}
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          />
+
+          {/* Type */}
+          <div className="flex gap-1">
+            {(["all", "income", "expense"] as const).map((v) => (
+              <button
+                key={v}
+                onClick={() => setFilterType(v)}
+                className={`px-3 py-1.5 rounded-lg text-xs sm:text-sm font-medium transition-colors ${
+                  filterType === v ? "bg-blue-600 text-white" : "bg-gray-100 text-gray-600 hover:bg-gray-200"
+                }`}
+              >
+                {v === "all" ? "Semua" : v === "income" ? "Pemasukan" : "Pengeluaran"}
+              </button>
+            ))}
+          </div>
+
+          {/* Category */}
+          <select
+            value={filterCategory}
+            onChange={(e) => setFilterCategory(e.target.value as "all" | TransactionCategory)}
+            className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
+          >
+            <option value="all">Semua Kategori</option>
+            {ALL_CATEGORIES.map((c) => (
+              <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>
+            ))}
+          </select>
         </div>
       </div>
 
       {/* Totals */}
       <div className="flex flex-wrap gap-3 text-sm">
-        <span className="text-green-600 font-semibold">In: {formatCurrency(totalIncome)}</span>
-        <span className="text-red-600 font-semibold">Out: {formatCurrency(totalExpense)}</span>
+        <span className="text-green-600 font-semibold">Masuk: {formatCurrency(totalIncome)}</span>
+        <span className="text-red-600 font-semibold">Keluar: {formatCurrency(totalExpense)}</span>
         <span className={`font-semibold ${totalIncome - totalExpense >= 0 ? "text-blue-600" : "text-orange-600"}`}>
           Net: {formatCurrency(totalIncome - totalExpense)}
         </span>
+        <span className="text-gray-400">{filtered.length} transaksi</span>
       </div>
 
       {filtered.length === 0 ? (
         <Card>
           <CardContent className="py-14 text-center text-gray-400 text-sm">
-            No transactions found.
+            {search || filterCategory !== "all" ? "Tidak ada transaksi yang cocok." : "Belum ada transaksi."}
           </CardContent>
         </Card>
       ) : (
@@ -122,10 +185,10 @@ export function TransactionsClient({ initialTransactions }: Props) {
                 <table className="w-full text-sm">
                   <thead>
                     <tr className="border-b border-gray-100 text-gray-500 text-left">
-                      <th className="px-6 py-3 font-medium">Date</th>
-                      <th className="px-6 py-3 font-medium">Description</th>
-                      <th className="px-6 py-3 font-medium">Category</th>
-                      <th className="px-6 py-3 font-medium text-right">Amount</th>
+                      <th className="px-6 py-3 font-medium">Tanggal</th>
+                      <th className="px-6 py-3 font-medium">Deskripsi</th>
+                      <th className="px-6 py-3 font-medium">Kategori</th>
+                      <th className="px-6 py-3 font-medium text-right">Jumlah</th>
                       <th className="px-6 py-3" />
                     </tr>
                   </thead>
@@ -184,7 +247,7 @@ export function TransactionsClient({ initialTransactions }: Props) {
       )}
 
       {/* Modal */}
-      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Add Transaction">
+      <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="Tambah Transaksi">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="flex gap-2">
             {(["income", "expense"] as TransactionType[]).map((v) => (
@@ -198,13 +261,13 @@ export function TransactionsClient({ initialTransactions }: Props) {
                     : "bg-white text-gray-600 border-gray-200 hover:bg-gray-50"
                 }`}
               >
-                {v.charAt(0).toUpperCase() + v.slice(1)}
+                {v === "income" ? "Pemasukan" : "Pengeluaran"}
               </button>
             ))}
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Category</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Kategori</label>
             <select
               value={form.category}
               onChange={(e) => setForm((f) => ({ ...f, category: e.target.value as TransactionCategory }))}
@@ -215,7 +278,7 @@ export function TransactionsClient({ initialTransactions }: Props) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Amount (IDR)</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Jumlah (IDR)</label>
             <input
               type="number" required min="1"
               value={form.amount}
@@ -226,18 +289,18 @@ export function TransactionsClient({ initialTransactions }: Props) {
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Deskripsi</label>
             <input
               type="text"
               value={form.description}
               onChange={(e) => setForm((f) => ({ ...f, description: e.target.value }))}
-              placeholder="Optional note"
+              placeholder="Catatan opsional"
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date</label>
+            <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal</label>
             <input
               type="date" required
               value={form.date}
@@ -247,8 +310,8 @@ export function TransactionsClient({ initialTransactions }: Props) {
           </div>
 
           <div className="flex gap-2 pt-1">
-            <Button type="button" variant="secondary" className="flex-1" onClick={() => setModalOpen(false)}>Cancel</Button>
-            <Button type="submit" className="flex-1" disabled={loading}>{loading ? "Saving..." : "Add"}</Button>
+            <Button type="button" variant="secondary" className="flex-1" onClick={() => setModalOpen(false)}>Batal</Button>
+            <Button type="submit" className="flex-1" disabled={loading}>{loading ? "Menyimpan…" : "Tambah"}</Button>
           </div>
         </form>
       </Modal>
