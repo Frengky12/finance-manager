@@ -1,10 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { requireAuth } from "@/lib/api-auth";
 
-// POST /api/recurring/apply
-// body: { templateIds: string[], month: "YYYY-MM" }
-// Creates transactions for each template and marks them as applied.
 export async function POST(req: NextRequest) {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const body = await req.json();
   const { templateIds, month } = body as { templateIds: string[]; month: string };
 
@@ -12,7 +13,6 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "templateIds and month required" }, { status: 400 });
   }
 
-  // Fetch the selected templates
   const { data: templates, error: tplErr } = await supabase
     .from("recurring_templates")
     .select("*")
@@ -25,13 +25,11 @@ export async function POST(req: NextRequest) {
   const errors: { templateId: string; error: string }[] = [];
 
   for (const tpl of templates) {
-    // Build date string using the template's day_of_month
     const [year, mon] = month.split("-").map(Number);
     const lastDay = new Date(year, mon, 0).getDate();
     const day = Math.min(tpl.day_of_month, lastDay);
     const date = `${month}-${String(day).padStart(2, "0")}`;
 
-    // Insert the transaction
     const { data: tx, error: txErr } = await supabase
       .from("transactions")
       .insert({
@@ -49,7 +47,6 @@ export async function POST(req: NextRequest) {
       continue;
     }
 
-    // Mark as applied (upsert in case re-applying)
     await supabase.from("recurring_applied").upsert(
       { template_id: tpl.id, month, transaction_id: tx.id, applied_at: new Date().toISOString() },
       { onConflict: "template_id,month" }

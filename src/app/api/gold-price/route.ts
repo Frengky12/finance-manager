@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { requireAuth } from "@/lib/api-auth";
 import { fetchLiveGoldPrice, isCacheValid } from "@/lib/goldPrice";
 import type { GoldPriceCache } from "@/types";
 
@@ -32,6 +33,9 @@ async function saveCache(price: GoldPriceCache) {
 }
 
 export async function GET() {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const cached = await getCachedPrice();
 
   if (isCacheValid(cached)) {
@@ -54,6 +58,9 @@ export async function GET() {
 }
 
 export async function DELETE() {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   await supabase.from("gold_price_cache").delete().eq("id", 1);
   return NextResponse.json({ ok: true });
 }

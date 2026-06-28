@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function GET(req: NextRequest) {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const { searchParams } = new URL(req.url);
   const month = searchParams.get("month");
 
@@ -14,9 +18,10 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const body = await req.json();
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
 
-  // Upsert: one budget per category per month (unique constraint handles conflict)
+  const body = await req.json();
   const { data, error } = await supabase
     .from("budgets")
     .upsert(

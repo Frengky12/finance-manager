@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
+import { requireAuth } from "@/lib/api-auth";
 
 export async function GET() {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const { data, error } = await supabase
     .from("gold_holdings")
     .select("*")
@@ -12,6 +16,9 @@ export async function GET() {
 }
 
 export async function POST(req: NextRequest) {
+  const { error: authError } = await requireAuth();
+  if (authError) return authError;
+
   const body = await req.json();
   const { data, error } = await supabase
     .from("gold_holdings")
