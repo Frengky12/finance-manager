@@ -70,6 +70,17 @@ export interface GoldPriceCache {
   updatedAt: string;
 }
 
+export interface SavingsGoal {
+  id: string;
+  name: string;
+  targetAmount: number;
+  currentAmount: number;
+  targetDate: string | null; // "YYYY-MM-DD"
+  notes: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
 export interface DbSchema {
   transactions: Transaction[];
   assets: Asset[];

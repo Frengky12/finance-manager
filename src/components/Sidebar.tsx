@@ -5,7 +5,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import {
   LayoutDashboard, ArrowRightLeft, Landmark, Target,
-  BarChart2, Wallet, Menu, X, RefreshCw, LogOut,
+  BarChart2, Wallet, Menu, X, RefreshCw, LogOut, PiggyBank,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { createClient } from "@/lib/supabase-browser";
@@ -16,6 +16,7 @@ const navItems = [
   { href: "/recurring", label: "Bulanan", icon: RefreshCw },
   { href: "/assets", label: "Assets", icon: Landmark },
   { href: "/budgets", label: "Budgets", icon: Target },
+  { href: "/savings", label: "Tabungan", icon: PiggyBank },
   { href: "/reports", label: "Reports", icon: BarChart2 },
 ];
 

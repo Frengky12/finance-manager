@@ -58,6 +58,17 @@ create table if not exists recurring_applied (
   unique (template_id, month)
 );
 
+create table if not exists savings_goals (
+  id uuid primary key default gen_random_uuid(),
+  name text not null,
+  target_amount numeric not null check (target_amount > 0),
+  current_amount numeric not null default 0 check (current_amount >= 0),
+  target_date date,
+  notes text not null default '',
+  created_at timestamptz not null default now(),
+  updated_at timestamptz not null default now()
+);
+
 -- Single-row table for caching the latest gold price
 -- Source: logam-mulia-api (anekalogam / Antam)
 create table if not exists gold_price_cache (
