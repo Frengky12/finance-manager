@@ -1,65 +1,154 @@
-import Image from "next/image";
+import { supabase } from "@/lib/supabase";
+import { formatCurrency, CATEGORY_LABELS, CATEGORY_COLORS } from "@/lib/utils";
+import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { TrendingUp, TrendingDown, Wallet, PiggyBank } from "lucide-react";
+import { DashboardCharts } from "@/components/DashboardCharts";
+import { format, subMonths } from "date-fns";
 
-export default function Home() {
+export const dynamic = "force-dynamic";
+
+export default async function DashboardPage() {
+  const currentMonth = format(new Date(), "yyyy-MM");
+
+  const [txRes, assetRes, goldRes, goldCacheRes] = await Promise.all([
+    supabase.from("transactions").select("*"),
+    supabase.from("assets").select("value"),
+    supabase.from("gold_holdings").select("grams"),
+    supabase.from("gold_price_cache").select("price_idr_per_gram").eq("id", 1).single(),
+  ]);
+
+  const allTransactions = txRes.data ?? [];
+  const monthlyTransactions = allTransactions.filter((t) =>
+    t.date?.startsWith(currentMonth)
+  );
+
+  const totalIncome = monthlyTransactions.filter((t) => t.type === "income").reduce((s: number, t: {amount: number}) => s + t.amount, 0);
+  const totalExpense = monthlyTransactions.filter((t) => t.type === "expense").reduce((s: number, t: {amount: number}) => s + t.amount, 0);
+  const savings = totalIncome - totalExpense;
+
+  const assetNetWorth = (assetRes.data ?? []).reduce((s: number, a: {value: number}) => s + Number(a.value), 0);
+  const priceIdrPerGram = Number(goldCacheRes.data?.price_idr_per_gram ?? 0);
+  const goldNetWorth = (goldRes.data ?? []).reduce((s: number, h: {grams: number}) => s + Number(h.grams) * priceIdrPerGram, 0);
+  const netWorth = assetNetWorth + goldNetWorth;
+
+  const spendingByCategory = monthlyTransactions
+    .filter((t) => t.type === "expense")
+    .reduce<Record<string, number>>((acc, t) => {
+      acc[t.category] = (acc[t.category] ?? 0) + t.amount;
+      return acc;
+    }, {});
+
+  const categoryData = Object.entries(spendingByCategory)
+    .map(([cat, amount]) => ({
+      name: CATEGORY_LABELS[cat as keyof typeof CATEGORY_LABELS] ?? cat,
+      value: amount,
+      color: CATEGORY_COLORS[cat as keyof typeof CATEGORY_COLORS] ?? "#6b7280",
+    }))
+    .sort((a, b) => b.value - a.value);
+
+  const months: string[] = [];
+  for (let i = 5; i >= 0; i--) {
+    months.push(format(subMonths(new Date(), i), "yyyy-MM"));
+  }
+  const trendData = months.map((m) => {
+    const txs = allTransactions.filter((t) => t.date?.startsWith(m));
+    return {
+      month: format(new Date(m + "-01"), "MMM"),
+      income: txs.filter((t) => t.type === "income").reduce((s: number, t: {amount: number}) => s + t.amount, 0),
+      expense: txs.filter((t) => t.type === "expense").reduce((s: number, t: {amount: number}) => s + t.amount, 0),
+    };
+  });
+
+  const recentTransactions = [...allTransactions]
+    .sort((a, b) => b.date?.localeCompare(a.date))
+    .slice(0, 5);
+
+  const summaryCards = [
+    { label: "Net Worth", value: netWorth, icon: Wallet, color: "text-blue-600", bg: "bg-blue-50" },
+    { label: "Income", value: totalIncome, icon: TrendingUp, color: "text-green-600", bg: "bg-green-50" },
+    { label: "Expenses", value: totalExpense, icon: TrendingDown, color: "text-red-600", bg: "bg-red-50" },
+    {
+      label: "Savings",
+      value: savings,
+      icon: PiggyBank,
+      color: savings >= 0 ? "text-emerald-600" : "text-orange-600",
+      bg: savings >= 0 ? "bg-emerald-50" : "bg-orange-50",
+    },
+  ];
+
   return (
-    <div className="flex flex-col flex-1 items-center justify-center bg-zinc-50 font-sans dark:bg-black">
-      <main className="flex flex-1 w-full max-w-3xl flex-col items-center justify-between py-32 px-16 bg-white dark:bg-black sm:items-start">
-        <Image
-          className="dark:invert"
-          src="/next.svg"
-          alt="Next.js logo"
-          width={100}
-          height={20}
-          priority
-        />
-        <div className="flex flex-col items-center gap-6 text-center sm:items-start sm:text-left">
-          <h1 className="max-w-xs text-3xl font-semibold leading-10 tracking-tight text-black dark:text-zinc-50">
-            To get started, edit the page.tsx file.
-          </h1>
-          <p className="max-w-md text-lg leading-8 text-zinc-600 dark:text-zinc-400">
-            Looking for a starting point or more instructions? Head over to{" "}
-            <a
-              href="https://vercel.com/templates?framework=next.js&utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Templates
-            </a>{" "}
-            or the{" "}
-            <a
-              href="https://nextjs.org/learn?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-              className="font-medium text-zinc-950 dark:text-zinc-50"
-            >
-              Learning
-            </a>{" "}
-            center.
-          </p>
-        </div>
-        <div className="flex flex-col gap-4 text-base font-medium sm:flex-row">
-          <a
-            className="flex h-12 w-full items-center justify-center gap-2 rounded-full bg-foreground px-5 text-background transition-colors hover:bg-[#383838] dark:hover:bg-[#ccc] md:w-[158px]"
-            href="https://vercel.com/new?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            <Image
-              className="dark:invert"
-              src="/vercel.svg"
-              alt="Vercel logomark"
-              width={16}
-              height={16}
-            />
-            Deploy Now
-          </a>
-          <a
-            className="flex h-12 w-full items-center justify-center rounded-full border border-solid border-black/[.08] px-5 transition-colors hover:border-transparent hover:bg-black/[.04] dark:border-white/[.145] dark:hover:bg-[#1a1a1a] md:w-[158px]"
-            href="https://nextjs.org/docs?utm_source=create-next-app&utm_medium=appdir-template-tw&utm_campaign=create-next-app"
-            target="_blank"
-            rel="noopener noreferrer"
-          >
-            Documentation
-          </a>
-        </div>
-      </main>
+    <div className="space-y-5 sm:space-y-6">
+      <div>
+        <h1 className="text-xl sm:text-2xl font-bold text-gray-900">Dashboard</h1>
+        <p className="text-sm text-gray-500 mt-0.5">{format(new Date(), "MMMM yyyy")}</p>
+      </div>
+
+      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3 sm:gap-4">
+        {summaryCards.map(({ label, value, icon: Icon, color, bg }) => (
+          <Card key={label}>
+            <CardContent className="flex flex-col sm:flex-row items-start sm:items-center gap-3 py-4 sm:py-5">
+              <div className={`${bg} p-2.5 rounded-lg shrink-0`}>
+                <Icon className={color} size={20} />
+              </div>
+              <div className="min-w-0">
+                <p className="text-xs text-gray-500 font-medium truncate">{label}</p>
+                <p className={`text-base sm:text-lg font-bold ${color} leading-tight`}>
+                  {formatCurrency(value)}
+                </p>
+              </div>
+            </CardContent>
+          </Card>
+        ))}
+      </div>
+
+      <DashboardCharts trendData={trendData} categoryData={categoryData} />
+
+      <Card>
+        <CardHeader>
+          <CardTitle>Recent Transactions</CardTitle>
+        </CardHeader>
+        {recentTransactions.length === 0 ? (
+          <CardContent>
+            <p className="text-center text-gray-400 py-6 text-sm">No transactions yet.</p>
+          </CardContent>
+        ) : (
+          <>
+            <div className="hidden sm:block">
+              <table className="w-full text-sm">
+                <tbody>
+                  {recentTransactions.map((t, i) => (
+                    <tr key={t.id} className={i !== recentTransactions.length - 1 ? "border-b border-gray-50" : ""}>
+                      <td className="px-6 py-3 text-gray-500 whitespace-nowrap">{t.date}</td>
+                      <td className="px-6 py-3">
+                        <span className="font-medium text-gray-800">{t.description || CATEGORY_LABELS[t.category as keyof typeof CATEGORY_LABELS]}</span>
+                        <span className="ml-2 text-xs text-gray-400">{CATEGORY_LABELS[t.category as keyof typeof CATEGORY_LABELS]}</span>
+                      </td>
+                      <td className={`px-6 py-3 text-right font-semibold ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
+                        {t.type === "income" ? "+" : "-"}{formatCurrency(t.amount)}
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+            <div className="sm:hidden divide-y divide-gray-50">
+              {recentTransactions.map((t) => (
+                <div key={t.id} className="px-4 py-3 flex items-center justify-between gap-3">
+                  <div className="min-w-0">
+                    <p className="text-sm font-medium text-gray-800 truncate">
+                      {t.description || CATEGORY_LABELS[t.category as keyof typeof CATEGORY_LABELS]}
+                    </p>
+                    <p className="text-xs text-gray-400">{CATEGORY_LABELS[t.category as keyof typeof CATEGORY_LABELS]} · {t.date}</p>
+                  </div>
+                  <span className={`text-sm font-bold shrink-0 ${t.type === "income" ? "text-green-600" : "text-red-600"}`}>
+                    {t.type === "income" ? "+" : "-"}{formatCurrency(t.amount)}
+                  </span>
+                </div>
+              ))}
+            </div>
+          </>
+        )}
+      </Card>
     </div>
   );
 }
