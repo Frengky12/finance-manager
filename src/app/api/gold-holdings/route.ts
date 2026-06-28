@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
+import { validateGoldHolding } from "@/lib/validate";
 
 export async function GET() {
   const { error: authError } = await requireAuth();
@@ -20,6 +21,9 @@ export async function POST(req: NextRequest) {
   if (authError) return authError;
 
   const body = await req.json();
+  const validErr = validateGoldHolding(body);
+  if (validErr) return validErr;
+
   const { data, error } = await supabase
     .from("gold_holdings")
     .insert({

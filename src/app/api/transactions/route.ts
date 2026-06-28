@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
+import { validateTransaction } from "@/lib/validate";
 
 export async function GET(req: NextRequest) {
   const { error: authError } = await requireAuth();
@@ -30,6 +31,9 @@ export async function POST(req: NextRequest) {
   if (authError) return authError;
 
   const body = await req.json();
+  const validErr = validateTransaction(body);
+  if (validErr) return validErr;
+
   const { data, error } = await supabase
     .from("transactions")
     .insert({

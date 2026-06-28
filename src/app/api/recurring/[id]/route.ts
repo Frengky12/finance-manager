@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { supabase } from "@/lib/supabase";
 import { requireAuth } from "@/lib/api-auth";
+import { validateRecurringTemplate } from "@/lib/validate";
 
 export async function PUT(
   req: NextRequest,
@@ -11,6 +12,9 @@ export async function PUT(
 
   const { id } = await params;
   const body = await req.json();
+  const validErr = validateRecurringTemplate(body);
+  if (validErr) return validErr;
+
   const { data, error } = await supabase
     .from("recurring_templates")
     .update({

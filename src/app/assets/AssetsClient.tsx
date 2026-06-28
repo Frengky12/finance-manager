@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { formatCurrency } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
 import type { Asset, AssetType } from "@/types";
 
 const ASSET_TYPE_CONFIG: Record<AssetType, { label: string; icon: React.ElementType; color: string; bg: string }> = {
@@ -24,6 +25,7 @@ interface Props { initialAssets: Asset[]; goldNetWorth?: number }
 
 export function AssetsClient({ initialAssets, goldNetWorth = 0 }: Props) {
   const router = useRouter();
+  const { toast } = useToast();
   const [assets, setAssets] = useState(initialAssets);
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<Asset | null>(null);
@@ -44,29 +46,44 @@ export function AssetsClient({ initialAssets, goldNetWorth = 0 }: Props) {
     e.preventDefault();
     setLoading(true);
     const payload = { ...form, value: Number(form.value) };
-    if (editTarget) {
-      const res = await fetch(`/api/assets/${editTarget.id}`, {
-        method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-      });
-      const updated = await res.json();
-      setAssets((prev) => prev.map((a) => (a.id === editTarget.id ? updated : a)));
-    } else {
-      const res = await fetch("/api/assets", {
-        method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
-      });
-      const created = await res.json();
-      setAssets((prev) => [...prev, created]);
+    try {
+      if (editTarget) {
+        const res = await fetch(`/api/assets/${editTarget.id}`, {
+          method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Gagal menyimpan");
+        setAssets((prev) => prev.map((a) => (a.id === editTarget.id ? data : a)));
+        toast("Aset berhasil diperbarui");
+      } else {
+        const res = await fetch("/api/assets", {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error ?? "Gagal menyimpan");
+        setAssets((prev) => [...prev, data]);
+        toast("Aset berhasil ditambahkan");
+      }
+      setModalOpen(false);
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Terjadi kesalahan", "error");
+    } finally {
+      setLoading(false);
     }
-    setModalOpen(false);
-    setLoading(false);
-    router.refresh();
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Delete this asset?")) return;
-    await fetch(`/api/assets/${id}`, { method: "DELETE" });
-    setAssets((prev) => prev.filter((a) => a.id !== id));
-    router.refresh();
+    if (!confirm("Hapus aset ini?")) return;
+    try {
+      const res = await fetch(`/api/assets/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Gagal menghapus");
+      setAssets((prev) => prev.filter((a) => a.id !== id));
+      toast("Aset dihapus");
+      router.refresh();
+    } catch {
+      toast("Gagal menghapus aset", "error");
+    }
   }
 
   const groupedByType = (Object.keys(ASSET_TYPE_CONFIG) as AssetType[])

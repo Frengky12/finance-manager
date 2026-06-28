@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Card, CardContent } from "@/components/ui/card";
 import { formatCurrency, EXPENSE_CATEGORIES, CATEGORY_LABELS } from "@/lib/utils";
+import { useToast } from "@/components/ui/toast";
 import type { Budget, Transaction, TransactionCategory } from "@/types";
 import { format } from "date-fns";
 
@@ -17,6 +18,7 @@ interface Props {
 
 export function BudgetsClient({ initialBudgets, transactions, currentMonth }: Props) {
   const router = useRouter();
+  const { toast } = useToast();
   const [budgets, setBudgets] = useState(initialBudgets);
   const [month, setMonth] = useState(currentMonth);
   const [modalOpen, setModalOpen] = useState(false);
@@ -31,28 +33,41 @@ export function BudgetsClient({ initialBudgets, transactions, currentMonth }: Pr
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const res = await fetch("/api/budgets", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, monthlyLimit: Number(form.monthlyLimit), month }),
-    });
-    const saved = await res.json();
-    setBudgets((prev) => {
-      const idx = prev.findIndex((b) => b.id === saved.id);
-      if (idx !== -1) { const next = [...prev]; next[idx] = saved; return next; }
-      return [...prev, saved];
-    });
-    setModalOpen(false);
-    setForm({ category: "food", monthlyLimit: "" });
-    setLoading(false);
-    router.refresh();
+    try {
+      const res = await fetch("/api/budgets", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, monthlyLimit: Number(form.monthlyLimit), month }),
+      });
+      const saved = await res.json();
+      if (!res.ok) throw new Error(saved.error ?? "Gagal menyimpan");
+      setBudgets((prev) => {
+        const idx = prev.findIndex((b) => b.id === saved.id);
+        if (idx !== -1) { const next = [...prev]; next[idx] = saved; return next; }
+        return [...prev, saved];
+      });
+      setModalOpen(false);
+      setForm({ category: "food", monthlyLimit: "" });
+      toast("Budget berhasil disimpan");
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Terjadi kesalahan", "error");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleDelete(id: string) {
-    if (!confirm("Remove this budget?")) return;
-    await fetch(`/api/budgets/${id}`, { method: "DELETE" });
-    setBudgets((prev) => prev.filter((b) => b.id !== id));
-    router.refresh();
+    if (!confirm("Hapus budget ini?")) return;
+    try {
+      const res = await fetch(`/api/budgets/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Gagal menghapus");
+      setBudgets((prev) => prev.filter((b) => b.id !== id));
+      toast("Budget dihapus");
+      router.refresh();
+    } catch {
+      toast("Gagal menghapus budget", "error");
+    }
   }
 
   function handleMonthChange(m: string) {

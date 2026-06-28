@@ -1,10 +1,11 @@
 "use client";
 import { useState, useMemo } from "react";
 import { useRouter } from "next/navigation";
-import { Plus, Trash2, Filter, Search, Download } from "lucide-react";
+import { Plus, Trash2, Filter, Search, Download, ChevronLeft, ChevronRight } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Modal } from "@/components/ui/modal";
 import { Card, CardContent } from "@/components/ui/card";
+import { useToast } from "@/components/ui/toast";
 import { formatCurrency, formatDate, INCOME_CATEGORIES, EXPENSE_CATEGORIES, CATEGORY_LABELS } from "@/lib/utils";
 import type { Transaction, TransactionType, TransactionCategory } from "@/types";
 import { format } from "date-fns";
@@ -12,6 +13,7 @@ import { format } from "date-fns";
 interface Props { initialTransactions: Transaction[] }
 
 const ALL_CATEGORIES = [...INCOME_CATEGORIES, ...EXPENSE_CATEGORIES];
+const PAGE_SIZE = 20;
 
 const EMPTY_FORM = {
   type: "expense" as TransactionType,
@@ -38,6 +40,7 @@ function exportCSV(transactions: Transaction[]) {
 
 export function TransactionsClient({ initialTransactions }: Props) {
   const router = useRouter();
+  const { toast } = useToast();
   const [transactions, setTransactions] = useState(initialTransactions);
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(EMPTY_FORM);
@@ -46,11 +49,13 @@ export function TransactionsClient({ initialTransactions }: Props) {
   const [filterCategory, setFilterCategory] = useState<"all" | TransactionCategory>("all");
   const [search, setSearch] = useState("");
   const [loading, setLoading] = useState(false);
+  const [page, setPage] = useState(1);
 
   const categories = form.type === "income" ? INCOME_CATEGORIES : EXPENSE_CATEGORIES;
 
   const filtered = useMemo(() => {
     const q = search.toLowerCase();
+    setPage(1);
     return [...transactions]
       .filter((t) => filterType === "all" || t.type === filterType)
       .filter((t) => !filterMonth || t.date.startsWith(filterMonth))
@@ -61,29 +66,46 @@ export function TransactionsClient({ initialTransactions }: Props) {
         CATEGORY_LABELS[t.category]?.toLowerCase().includes(q)
       )
       .sort((a, b) => b.date.localeCompare(a.date));
+  // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [transactions, filterType, filterMonth, filterCategory, search]);
+
+  const totalPages = Math.ceil(filtered.length / PAGE_SIZE);
+  const paginated = filtered.slice((page - 1) * PAGE_SIZE, page * PAGE_SIZE);
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setLoading(true);
-    const res = await fetch("/api/transactions", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ ...form, amount: Number(form.amount) }),
-    });
-    const created = await res.json();
-    setTransactions((prev) => [...prev, created]);
-    setModalOpen(false);
-    setForm(EMPTY_FORM);
-    setLoading(false);
-    router.refresh();
+    try {
+      const res = await fetch("/api/transactions", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ ...form, amount: Number(form.amount) }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "Gagal menyimpan");
+      setTransactions((prev) => [...prev, data]);
+      setModalOpen(false);
+      setForm(EMPTY_FORM);
+      toast("Transaksi berhasil ditambahkan");
+      router.refresh();
+    } catch (err) {
+      toast(err instanceof Error ? err.message : "Terjadi kesalahan", "error");
+    } finally {
+      setLoading(false);
+    }
   }
 
   async function handleDelete(id: string) {
     if (!confirm("Hapus transaksi ini?")) return;
-    await fetch(`/api/transactions/${id}`, { method: "DELETE" });
-    setTransactions((prev) => prev.filter((t) => t.id !== id));
-    router.refresh();
+    try {
+      const res = await fetch(`/api/transactions/${id}`, { method: "DELETE" });
+      if (!res.ok) throw new Error("Gagal menghapus");
+      setTransactions((prev) => prev.filter((t) => t.id !== id));
+      toast("Transaksi dihapus");
+      router.refresh();
+    } catch {
+      toast("Gagal menghapus transaksi", "error");
+    }
   }
 
   const totalIncome = filtered.filter((t) => t.type === "income").reduce((s, t) => s + t.amount, 0);
@@ -107,7 +129,6 @@ export function TransactionsClient({ initialTransactions }: Props) {
 
       {/* Filters */}
       <div className="space-y-2">
-        {/* Search */}
         <div className="relative">
           <Search size={15} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
           <input
@@ -118,20 +139,14 @@ export function TransactionsClient({ initialTransactions }: Props) {
             className="w-full pl-9 pr-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
         </div>
-
-        {/* Filter row */}
         <div className="flex flex-wrap gap-2 items-center">
           <Filter size={15} className="text-gray-400 shrink-0" />
-
-          {/* Month */}
           <input
             type="month"
             value={filterMonth}
             onChange={(e) => setFilterMonth(e.target.value)}
             className="border border-gray-200 rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
           />
-
-          {/* Type */}
           <div className="flex gap-1">
             {(["all", "income", "expense"] as const).map((v) => (
               <button
@@ -145,8 +160,6 @@ export function TransactionsClient({ initialTransactions }: Props) {
               </button>
             ))}
           </div>
-
-          {/* Category */}
           <select
             value={filterCategory}
             onChange={(e) => setFilterCategory(e.target.value as "all" | TransactionCategory)}
@@ -193,8 +206,8 @@ export function TransactionsClient({ initialTransactions }: Props) {
                     </tr>
                   </thead>
                   <tbody>
-                    {filtered.map((t, i) => (
-                      <tr key={t.id} className={i !== filtered.length - 1 ? "border-b border-gray-50" : ""}>
+                    {paginated.map((t, i) => (
+                      <tr key={t.id} className={i !== paginated.length - 1 ? "border-b border-gray-50" : ""}>
                         <td className="px-6 py-3 text-gray-500 whitespace-nowrap">{formatDate(t.date)}</td>
                         <td className="px-6 py-3 text-gray-800">{t.description || "—"}</td>
                         <td className="px-6 py-3">
@@ -218,9 +231,9 @@ export function TransactionsClient({ initialTransactions }: Props) {
             </Card>
           </div>
 
-          {/* Mobile card list */}
+          {/* Mobile list */}
           <div className="sm:hidden space-y-2">
-            {filtered.map((t) => (
+            {paginated.map((t) => (
               <Card key={t.id}>
                 <CardContent className="py-3 px-4 flex items-center justify-between gap-3">
                   <div className="min-w-0">
@@ -243,6 +256,43 @@ export function TransactionsClient({ initialTransactions }: Props) {
               </Card>
             ))}
           </div>
+
+          {/* Pagination */}
+          {totalPages > 1 && (
+            <div className="flex items-center justify-between text-sm">
+              <span className="text-gray-500">
+                Halaman {page} dari {totalPages} · {filtered.length} transaksi
+              </span>
+              <div className="flex gap-1">
+                <button
+                  onClick={() => setPage((p) => Math.max(1, p - 1))}
+                  disabled={page === 1}
+                  className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronLeft size={16} />
+                </button>
+                {Array.from({ length: Math.min(totalPages, 5) }, (_, i) => {
+                  const p = totalPages <= 5 ? i + 1 : page <= 3 ? i + 1 : page >= totalPages - 2 ? totalPages - 4 + i : page - 2 + i;
+                  return (
+                    <button
+                      key={p}
+                      onClick={() => setPage(p)}
+                      className={`w-8 h-8 rounded-lg text-sm font-medium ${p === page ? "bg-blue-600 text-white" : "border border-gray-200 text-gray-600 hover:bg-gray-50"}`}
+                    >
+                      {p}
+                    </button>
+                  );
+                })}
+                <button
+                  onClick={() => setPage((p) => Math.min(totalPages, p + 1))}
+                  disabled={page === totalPages}
+                  className="p-1.5 rounded-lg border border-gray-200 text-gray-500 hover:bg-gray-50 disabled:opacity-40 disabled:cursor-not-allowed"
+                >
+                  <ChevronRight size={16} />
+                </button>
+              </div>
+            </div>
+          )}
         </>
       )}
 
@@ -265,7 +315,6 @@ export function TransactionsClient({ initialTransactions }: Props) {
               </button>
             ))}
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Kategori</label>
             <select
@@ -276,7 +325,6 @@ export function TransactionsClient({ initialTransactions }: Props) {
               {categories.map((c) => <option key={c} value={c}>{CATEGORY_LABELS[c]}</option>)}
             </select>
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Jumlah (IDR)</label>
             <input
@@ -287,7 +335,6 @@ export function TransactionsClient({ initialTransactions }: Props) {
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Deskripsi</label>
             <input
@@ -298,7 +345,6 @@ export function TransactionsClient({ initialTransactions }: Props) {
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
-
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Tanggal</label>
             <input
@@ -308,7 +354,6 @@ export function TransactionsClient({ initialTransactions }: Props) {
               className="w-full border border-gray-200 rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-blue-400"
             />
           </div>
-
           <div className="flex gap-2 pt-1">
             <Button type="button" variant="secondary" className="flex-1" onClick={() => setModalOpen(false)}>Batal</Button>
             <Button type="submit" className="flex-1" disabled={loading}>{loading ? "Menyimpan…" : "Tambah"}</Button>
